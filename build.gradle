@@ -1,0 +1,35 @@
+plugins {
+    id 'java'
+    id 'net.neoforged.gradle.userdev' version '7.0.145'
+}
+
+version = '1.0.0'
+group = 'dev.createfix.rapierfix'
+
+base {
+    archivesName = 'sable-rapier-deadlock-fix-1.21.1'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
+    }
+    server {
+        workingDirectory project.file('run')
+    }
+}
+
+dependencies {
+    implementation "net.neoforged:neoforge:21.1.228"
+
+    // Compile-only: Sable and its bundled sable_rapier are expected to already
+    // be present at runtime. Local jars pulled from the actual modpack (see
+    // libs/) since they aren't on a Maven repository we can pin reliably.
+    compileOnly files("libs/sable-neoforge-1.21.1-2.0.3.jar")
+    compileOnly files("libs/dev.ryanhcode.sable.sable-sable_rapier-1.21.1-2.0.3.jar")
+}
