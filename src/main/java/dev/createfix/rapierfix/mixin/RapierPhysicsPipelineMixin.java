@@ -1,10 +1,12 @@
 package dev.createfix.rapierfix.mixin;
 
 import dev.createfix.rapierfix.Config;
+import dev.ryanhcode.sable.api.physics.PhysicsPipelineBody;
 import dev.ryanhcode.sable.physics.impl.rapier.RapierPhysicsPipeline;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import org.joml.Vector3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -12,6 +14,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Fixes a dedicated-server deadlock/hang in Sable 2.0.3's Rapier physics
@@ -60,6 +63,32 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Bracketing the whole (public) physicsTick() method instead - rather than
  * wrapping the step() call specifically - avoids needing to touch that
  * method at all.
+ *
+ * ---
+ *
+ * Also fixes a second, unrelated Sable 2.0.3 crash reported as:
+ *
+ *   java.lang.RuntimeException: Body has been removed
+ *       at RapierPhysicsPipeline.assertBodyValid(RapierPhysicsPipeline.java:578)
+ *       at RapierPhysicsPipeline.getLinearVelocity(RapierPhysicsPipeline.java:485)
+ *       at SubLevelSerializer.serialize(SubLevelSerializer.java:62)
+ *       at SubLevelHoldingChunkMap.saveAll(SubLevelHoldingChunkMap.java:240)
+ *
+ * Root cause: getLinearVelocity()/getAngularVelocity() both start by calling
+ * assertBodyValid(), which throws a plain RuntimeException if the physics
+ * body was already removed (e.g. its sublevel/contraption was disassembled
+ * or despawned). SubLevelHoldingChunkMap.saveAll() - the periodic world
+ * autosave - reads a sublevel's velocity via exactly these two methods
+ * without checking RigidBodyHandle.isValid() first. If a sublevel's body
+ * happens to have been removed right before an autosave tick, the exception
+ * propagates all the way up through ServerLevel.save() and crashes the
+ * entire server tick (not just that one sublevel's save).
+ *
+ * Fix: mirror the same "removed -> neutral value" approach as the rest of
+ * this mod's fixes (and the create-6.0.10-obb-collision-npe-fix mod before
+ * it) - when the body is already removed, report zero velocity instead of
+ * throwing. A removed body isn't moving anywhere, so zero is exactly the
+ * physically-correct answer, not just a crash-avoidance placeholder.
  */
 @Mixin(value = RapierPhysicsPipeline.class, remap = false)
 public abstract class RapierPhysicsPipelineMixin {
@@ -96,6 +125,20 @@ public abstract class RapierPhysicsPipelineMixin {
                     worldX, worldY, worldZ, oldState.getBlock(), newState.getBlock());
             }
             ci.cancel();
+        }
+    }
+
+    @Inject(method = "getLinearVelocity", at = @At("HEAD"), cancellable = true)
+    private void createfix$safeGetLinearVelocity(PhysicsPipelineBody body, Vector3d out, CallbackInfoReturnable<Vector3d> cir) {
+        if (body.isRemoved()) {
+            cir.setReturnValue(out.set(0, 0, 0));
+        }
+    }
+
+    @Inject(method = "getAngularVelocity", at = @At("HEAD"), cancellable = true)
+    private void createfix$safeGetAngularVelocity(PhysicsPipelineBody body, Vector3d out, CallbackInfoReturnable<Vector3d> cir) {
+        if (body.isRemoved()) {
+            cir.setReturnValue(out.set(0, 0, 0));
         }
     }
 }

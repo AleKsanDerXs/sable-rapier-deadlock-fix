@@ -4,16 +4,22 @@ license = "MIT"
 
 [[mods]]
     modId = "sable_rapier_deadlock_fix"
-    version = "1.0.0"
-    displayName = "Sable Rapier Physics Deadlock Fix"
+    version = "1.1.0"
+    displayName = "Sable 2.0.3 Stability Fixes"
     authors = "AleKsanDerXs"
     description = '''
-        Fixes a dedicated-server hang/deadlock in Sable 2.0.3's Rapier physics
-        backend: RapierPhysicsPipeline.physicsTick() can reenter the native
-        Rapier engine via handleBlockChange() -> Rapier3D.newVoxelCollider()
-        while already inside Rapier3D.step() (e.g. when a fragile block is
-        destroyed by a physics collision mid-step), which hangs the native
-        call forever and eventually trips ServerHangWatchdog.
+        Fixes three related dedicated-server crashes in Sable 2.0.3's physics
+        and sublevel ("plot") systems:
+        1) RapierPhysicsPipeline.physicsTick() reentering the native Rapier
+           engine via handleBlockChange() -> Rapier3D.newVoxelCollider() while
+           already inside Rapier3D.step(), which hangs forever and eventually
+           trips ServerHangWatchdog.
+        2) RuntimeException "Body has been removed" when the periodic world
+           autosave reads a sublevel's velocity after its physics body was
+           already removed.
+        3) UnsupportedOperationException "Cannot change blocks in nonexistent
+           plot holder" when a block entity ticks inside a plot whose chunk
+           holder has already been torn down.
     '''
 
 [[mixins]]

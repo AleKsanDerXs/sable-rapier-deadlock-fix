@@ -4,7 +4,8 @@
   "package": "dev.createfix.rapierfix.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "RapierPhysicsPipelineMixin"
+    "RapierPhysicsPipelineMixin",
+    "ServerChunkCachePlotFixMixin"
   ],
   "server": [],
   "client": [],
