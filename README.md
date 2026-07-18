@@ -1,12 +1,12 @@
-# Sable 2.0.3 — Stability Fixes (Rapier deadlock, removed-body crash, plot-holder crash)
+# Sable 2.0.3 — Stability Fixes (Rapier deadlock, removed-body crash, plot-holder crash, mass NPE)
 
-A small [Mixin](https://github.com/SpongePowered/Mixin)-based patch mod that fixes **three** related dedicated-server
+A small [Mixin](https://github.com/SpongePowered/Mixin)-based patch mod that fixes **four** related dedicated-server
 crashes in [Sable](https://modrinth.com/mod/sable) **2.0.3**'s physics and sublevel ("plot") systems, on
 **NeoForge 21.1.228 / Minecraft 1.21.1**. Sable is the physics engine behind
 [Create Aeronautics](https://modrinth.com/mod/create-aeronautics), Create Offroad, and other physics-driven Create
 addons.
 
-All three share the same underlying pattern: some object (a block's physics collider, a physics body, a plot's
+The first three share the same underlying pattern: some object (a block's physics collider, a physics body, a plot's
 chunk holder) gets removed/torn down, and another part of Sable tries to use it a moment later without checking —
 throwing an exception that takes the whole server down instead of just skipping that one stale reference.
 
@@ -126,6 +126,48 @@ lower Mixin priority (900 vs. the default 1000) so it runs *before* Sable's own 
 method early instead of letting Sable's check throw. Silently skipping the notification for a chunk with no holder
 is safe — nothing is tracking that plot chunk anymore, so there's nothing meaningful to notify.
 
+## 4. NullPointerException building contraption properties (`sable$buildProperties`)
+
+```
+java.lang.NullPointerException: Cannot invoke "org.joml.Vector3dc.negate(org.joml.Vector3d)" because the return
+value of "dev.ryanhcode.sable.api.physics.mass.MassTracker.getCenterOfMass()" is null
+    at com.simibubi.create.content.contraptions.AbstractContraptionEntity.sable$buildProperties(AbstractContraptionEntity.java:3168)
+    at com.simibubi.create.content.contraptions.AbstractContraptionEntity.handler$...$sable$contraptionInitialize(AbstractContraptionEntity.java:3094)
+    at com.simibubi.create.content.contraptions.AbstractContraptionEntity.tick(AbstractContraptionEntity.java)
+    at net.minecraft.world.entity.Entity.rideTick(Entity.java:1960)
+```
+
+### Root cause
+
+Sable adds a mixin to Create's `AbstractContraptionEntity` that builds physics properties (mass, center of mass,
+inertia) for a contraption the first time it initializes. It computes those properties with
+`MassTracker.build(blockGetter, bounds)`, which scans every block in the contraption's local bounding box and
+averages the mass-weighted position of every **solid** block (per `VoxelNeighborhoodState.isSolid()` — not the same
+check as "is this block air"). If a contraption's bounding box contains zero solid blocks — for example a
+contraption made entirely of non-solid/decorative "floating" blocks like leaves — `MassTracker.build()` correctly
+returns a tracker with `mass = 0` and `centerOfMass = null`. This is a deliberate, documented (`@Nullable`) sentinel
+inside Sable's own `MassTracker` class for "nothing to average" — Sable's own `addBlockMass()` method already checks
+for it internally.
+
+The bug is that `sable$buildProperties()` calls `massTracker.getCenterOfMass().negate(...)` directly, without the
+same null check, to compute an offset for repositioning any floating decorative blocks in the contraption. When the
+contraption has no solid blocks, that call NPEs and kills the entity's tick — and since a Create contraption entity
+being ticked can't recover from an uncaught exception mid-`tick()`, it takes down the whole server tick with it.
+
+### Fix
+
+[`AbstractContraptionEntityMassFixMixin`](src/main/java/dev/createfix/rapierfix/mixin/AbstractContraptionEntityMassFixMixin.java)
+redirects that one `getCenterOfMass()` call (scoped to just this call site, not Sable's `MassTracker` API in
+general — other Sable code, like `MergedMassTracker`, relies on `null` meaning "empty tracker" and would break if
+`MassTracker` itself were changed to never return null) to fall back to a zero vector when the real result is null.
+A contraption with no solid blocks has no meaningful mass-based pivot to offset by anyway, so treating the offset as
+zero — i.e. leaving any floating blocks at their already-set local origin — is the physically-neutral choice, not
+just a crash-avoidance placeholder.
+
+This mixin runs with a higher-than-default priority (2000 vs. Sable's default 1000) so that it's applied *after*
+Sable's own mixin has already merged `sable$buildProperties` into `AbstractContraptionEntity` — otherwise the
+target method wouldn't exist yet for this mixin to inject into.
+
 ## Optional logging
 
 Disabled by default. Set `logPreventedDeadlocks = true` in `config/sable_rapier_deadlock_fix-common.toml` to log an
@@ -152,17 +194,20 @@ these upstream, remove this mod.
 
 ## Installation
 
-Drop the jar into `mods/` on the **server**. All three bugs are server-authoritative (world autosave, server-side
-physics tick, server-side chunk cache); installing on the client as well is harmless but shouldn't be necessary.
+Drop the jar into `mods/` on the **server**. All four bugs are server-authoritative (world autosave, server-side
+physics tick, server-side chunk cache, server-side contraption tick); installing on the client as well is harmless
+but shouldn't be necessary. Requires Create (any version providing `AbstractContraptionEntity` in the same shape as
+6.0.10) alongside Sable.
 
 ## Building from source
 
-This mod compiles against Sable and its bundled `sable_rapier` native-physics module as `compileOnly` local jar
-dependencies (neither is published on a Maven repository this project pins to).
+This mod compiles against Sable, its bundled `sable_rapier` native-physics module, and Create as `compileOnly` local
+jar dependencies (none of them are published on a Maven repository this project pins to).
 
-1. Grab `sable-neoforge-1.21.1-2.0.3.jar` ([Modrinth](https://modrinth.com/mod/sable)).
-2. Extract `dev.ryanhcode.sable.sable-sable_rapier-1.21.1-2.0.3.jar` from its `META-INF/jarjar/` folder.
-3. Place both jars in `libs/` (create the folder if it doesn't exist).
+1. Grab `sable-neoforge-1.21.1-2.0.3.jar` ([Modrinth](https://modrinth.com/mod/sable)) and
+   `create-1.21.1-6.0.10.jar` ([Modrinth](https://modrinth.com/mod/create)).
+2. Extract `dev.ryanhcode.sable.sable-sable_rapier-1.21.1-2.0.3.jar` from Sable's `META-INF/jarjar/` folder.
+3. Place all three jars in `libs/` (create the folder if it doesn't exist).
 4. Run:
    ```
    ./gradlew build

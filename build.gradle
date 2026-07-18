@@ -3,7 +3,7 @@ plugins {
     id 'net.neoforged.gradle.userdev' version '7.0.145'
 }
 
-version = '1.1.0'
+version = '1.2.0'
 group = 'dev.createfix.rapierfix'
 
 base {
@@ -32,4 +32,5 @@ dependencies {
     // libs/) since they aren't on a Maven repository we can pin reliably.
     compileOnly files("libs/sable-neoforge-1.21.1-2.0.3.jar")
     compileOnly files("libs/dev.ryanhcode.sable.sable-sable_rapier-1.21.1-2.0.3.jar")
+    compileOnly files("libs/create-1.21.1-6.0.10.jar")
 }
