@@ -4,11 +4,11 @@ license = "MIT"
 
 [[mods]]
     modId = "sable_rapier_deadlock_fix"
-    version = "1.2.0"
+    version = "1.3.0"
     displayName = "Sable 2.0.3 Stability Fixes"
     authors = "AleKsanDerXs"
     description = '''
-        Fixes four related dedicated-server crashes in Sable 2.0.3's physics
+        Fixes five dedicated-server crashes in Sable 2.0.3's physics
         and sublevel ("plot") systems:
         1) RapierPhysicsPipeline.physicsTick() reentering the native Rapier
            engine via handleBlockChange() -> Rapier3D.newVoxelCollider() while
@@ -24,6 +24,9 @@ license = "MIT"
            when MassTracker.getCenterOfMass() legitimately returns null for a
            contraption with no solid blocks (e.g. an all-decorative/floating
            contraption).
+        5) ServerHangWatchdog freeze in RapierVoxelColliderBakery -> Util$8.apply
+           when a modded block collision shape recursively requests collider
+           data for a BlockState whose collider is already being baked.
     '''
 
 [[mixins]]
