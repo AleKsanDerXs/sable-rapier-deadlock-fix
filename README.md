@@ -218,3 +218,25 @@ The output jar is written to `build/libs/`.
 ## License
 
 [MIT](LICENSE)
+
+## 5. Recursive voxel-collider cache hang during chunk-section addition
+
+Observed watchdog stack:
+
+```text
+net.minecraft.Util$8.apply
+RapierVoxelColliderBakery.getPhysicsDataForBlock
+RapierPhysicsPipeline.handleChunkSectionAddition
+PhysicsChunkTicketManager.addTicket
+```
+
+Sable 2.0.3 uses `Util.memoize(this::buildPhysicsDataForBlock)`. A modded block's
+collision-shape query can re-enter collider baking for the same `BlockState`
+while its first cache entry is still being computed. The server thread then
+stays inside the memoizer and the watchdog eventually terminates the server.
+
+`RapierVoxelColliderBakeryMixin` bypasses that memoizer with an isolated,
+per-bakery `ConcurrentHashMap`, computes entries outside map internals, and uses
+a per-thread identity set to detect recursive `BlockState` baking. A nested
+recursive request temporarily receives no collider, while the original outer
+build completes and is cached. Existing mixins are unchanged.

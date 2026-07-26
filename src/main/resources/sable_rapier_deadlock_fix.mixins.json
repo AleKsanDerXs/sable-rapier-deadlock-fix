@@ -6,7 +6,8 @@
   "mixins": [
     "RapierPhysicsPipelineMixin",
     "ServerChunkCachePlotFixMixin",
-    "AbstractContraptionEntityMassFixMixin"
+    "AbstractContraptionEntityMassFixMixin",
+    "RapierVoxelColliderBakeryMixin"
   ],
   "server": [],
   "client": [],
